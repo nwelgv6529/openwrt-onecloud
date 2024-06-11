@@ -42,14 +42,14 @@ cp -rf dnsmasq package/network/services/
 ./scripts/feeds install -a
 
 sed -i "s/192.168.1.1/$OP_IP/" package/base-files/files/bin/config_generate
-sed -i "s/hostname='.*'/hostname='$name'/g" package/base-files/files/bin/config_generate
+sed -i "s/hostname='.*'/hostname='$OP_name'/g" package/base-files/files/bin/config_generate
 sed -i 's|/bin/login|/bin/login -f root|g' feeds/packages/utils/ttyd/files/ttyd.config
 
 sudo rm -rf package/base-files/files/etc/banner
 
 sed -i "s/%D %V %C/%D $(TZ=UTC-8 date +%Y.%m.%d)/" package/base-files/files/etc/openwrt_release
 
-sed -i "s/%R/by shiyu1314/" package/base-files/files/etc/openwrt_release
+sed -i "s/%R/by ${{ github.event.inputs.OP_author }}/" package/base-files/files/etc/openwrt_release
 
 date=$(date +"%Y-%m-%d")
 echo "                                                    " >> package/base-files/files/etc/banner
@@ -59,5 +59,5 @@ echo " |   -   ||  _  |  -__|     ||  |  |  ||   _||   _|" >> package/base-files
 echo " |_______||   __|_____|__|__||________||__|  |____|" >> package/base-files/files/etc/banner
 echo "          |__|" >> package/base-files/files/etc/banner
 echo " -----------------------------------------------------" >> package/base-files/files/etc/banner
-echo "         %D ${date} by shiyu1314                     " >> package/base-files/files/etc/banner
+echo "         %D ${date} by ${{ github.event.inputs.OP_author }}                     " >> package/base-files/files/etc/banner
 echo " -----------------------------------------------------" >> package/base-files/files/etc/banner

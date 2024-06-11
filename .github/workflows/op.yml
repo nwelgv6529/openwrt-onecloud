@@ -24,7 +24,7 @@ on:
         default: '600' 
         type: string
 
-      name:
+      OP_name:
         description: '主机名称'     
         required: true
         default: 'OpenWrt' 
@@ -32,6 +32,12 @@ on:
         options:
         - OpenWrt
         - OneCloud
+   
+      OP_author:
+        description: '定制作者'     
+        required: false
+        default: 'shiyu1314' 
+        type: string    
 
       CUSTOM_PLUGINS:
         description: '自定义插件名称，用逗号分隔'
@@ -88,11 +94,12 @@ jobs:
       run: |  
         export DATE=$(TZ=UTC-8 date +"%y.%m.%d")
         echo "DATE=$DATE" >> $GITHUB_ENV 
-        echo "kernel=${{ matrix.kernel_version }}" >> $GITHUB_ENV
+        echo "OP_kernel=${{ matrix.kernel_version }}" >> $GITHUB_ENV
         echo "REPO_URL=${{ github.event.inputs.REPO_URL }}" >> $GITHUB_ENV
         echo "REPO_BRANCH=${{ matrix.kernel_version == '5.15' && 'openwrt-23.05' || 'master' }}" >> $GITHUB_ENV
         echo "OP_IP=${{ github.event.inputs.OP_IP }}" >> $GITHUB_ENV
-        echo "name=${{ github.event.inputs.name }}" >> $GITHUB_ENV
+        echo "OP_name=${{ github.event.inputs.OP_name }}" >> $GITHUB_ENV
+        echo "OP_author=${{ github.event.inputs.OP_author }}" >> $GITHUB_ENV
         echo "OP_rootfs=${{ github.event.inputs.OP_rootfs }}" >> $GITHUB_ENV 
         echo "CUSTOM_PLUGINS=${{ github.event.inputs.CUSTOM_PLUGINS }}" >> $GITHUB_ENV
 
@@ -105,7 +112,7 @@ jobs:
         
     - name: 添加玩客云
       run: |
-        cp -rf OneCloud/$kernel/amlogic openwrt/target/linux          
+        cp -rf OneCloud/$OP_kernel/amlogic openwrt/target/linux          
         
     - name: 加载自定义脚本
       run: |
