@@ -249,12 +249,13 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: OpenWrt常规版_${{env.DATE}}
+        tag_name: ${{env.DATE}}_openwrt_burn
         files: ${{ env.FIRMWARE }}/*
         body: |
           ====================固件信息=======================
            源码：${{ github.event.inputs.REPO_URL }}
            默认地址：${{ github.event.inputs.OP_IP }}
            插件：${{ github.event.inputs.CUSTOM_PLUGINS }}
+           定制作者：${{ github.event.inputs.OP_author }}
            默认密码：无
 
