@@ -1,0 +1,261 @@
+name: openwrt
+
+on:
+  repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      REPO_URL:
+        description: 'op源码'     
+        required: true
+        default: 'https://github.com/openwrt/openwrt' 
+        type: choice
+        options:
+        - https://github.com/openwrt/openwrt
+
+      OP_IP:
+        description: 'IP选项'     
+        required: false
+        default: '192.168.2.2' 
+        type: string
+
+      OP_rootfs:
+        description: '预设镜像大小'     
+        required: false
+        default: '600' 
+        type: string
+
+      OP_name:
+        description: '主机名称'     
+        required: true
+        default: 'OpenWrt' 
+        type: choice
+        options:
+        - OpenWrt
+        - OneCloud
+   
+      OP_author:
+        description: '定制作者'     
+        required: false
+        default: 'shiyu1314' 
+        type: string    
+
+      CUSTOM_PLUGINS:
+        description: '自定义插件名称，用逗号分隔'
+        required: false
+        default: 'luci-app-dockerman,luci-app-mosdns,luci-theme-argon,luci-app-ttyd,luci-app-diskman,luci-app-hd-idle,luci-app-homeproxy,luci-app-samba4,luci-app-adguardhome,luci-app-emby,luci-app-openclash,luci-app-usb-printer'
+        type: string
+
+env:
+  TZ: Asia/Shanghai
+  DIY_P1_SH: sh/op.sh
+  DIY_P2_SH: sh/oc.sh
+  DIY_P3_SH: sh/ad.sh
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+
+jobs:
+  build_firmware:
+    name: 编译固件
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        kernel_version: ["5.15", "6.1", "6.6"]
+
+    steps: 
+    - name: 释放磁盘空间
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: true
+        docker-images: true
+        swap-storage: true
+    
+    - name: 检查分支
+      uses: actions/checkout@main
+
+    - name: 编译环境
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        sudo mkdir -p /workdir
+        sudo chown $USER:$GROUPS /workdir
+
+    - name: 初始化变量
+      run: |  
+        export DATE=$(TZ=UTC-8 date +"%y.%m.%d")
+        echo "DATE=$DATE" >> $GITHUB_ENV 
+        echo "OP_kernel=${{ matrix.kernel_version }}" >> $GITHUB_ENV
+        echo "REPO_URL=${{ github.event.inputs.REPO_URL }}" >> $GITHUB_ENV
+        echo "REPO_BRANCH=${{ matrix.kernel_version == '5.15' && 'openwrt-23.05' || 'master' }}" >> $GITHUB_ENV
+        echo "OP_IP=${{ github.event.inputs.OP_IP }}" >> $GITHUB_ENV
+        echo "OP_name=${{ github.event.inputs.OP_name }}" >> $GITHUB_ENV
+        echo "OP_author=${{ github.event.inputs.OP_author }}" >> $GITHUB_ENV
+        echo "OP_rootfs=${{ github.event.inputs.OP_rootfs }}" >> $GITHUB_ENV 
+        echo "CUSTOM_PLUGINS=${{ github.event.inputs.CUSTOM_PLUGINS }}" >> $GITHUB_ENV
+
+    - name: 克隆源代码
+      working-directory: /workdir
+      run: |
+        df -hT $PWD
+        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt 
+        
+    - name: 添加玩客云
+      run: |
+        cp -rf OneCloud/$OP_kernel/amlogic openwrt/target/linux          
+        
+    - name: 加载自定义脚本
+      run: |
+        chmod +x $DIY_P1_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P1_SH
+
+    - name: 下载oc内核
+      run: |
+        chmod +x $DIY_P2_SH
+        $GITHUB_WORKSPACE/$DIY_P2_SH     
+        
+    - name: 下载ad核心
+      run: |
+        chmod +x $DIY_P3_SH
+        $GITHUB_WORKSPACE/$DIY_P3_SH       
+
+    - name: 加载自定义配置
+      run: |
+        [ -e files ] && mv files openwrt/files
+        cat <<EOF >>openwrt/.config
+        CONFIG_TARGET_amlogic=y
+        CONFIG_TARGET_amlogic_meson8b=y
+        CONFIG_TARGET_amlogic_meson8b_DEVICE_thunder-onecloud=y
+        CONFIG_TARGET_KERNEL_PARTSIZE=32
+        CONFIG_TARGET_ROOTFS_PARTSIZE=${{ github.event.inputs.OP_rootfs }}
+        CONFIG_KERNEL_EXT4_FS_SECURITY=y
+        # CONFIG_TARGET_ROOTFS_SQUASHFS is not set
+        # CONFIG_PACKAGE_dnsmasq is not set
+
+        CONFIG_PACKAGE_dnsmasq-full=y
+        CONFIG_PACKAGE_luci-app-firewall=y
+        CONFIG_PACKAGE_bash=y
+        CONFIG_PACKAGE_kmod-nft-socket=y
+        CONFIG_PACKAGE_fuse-utils=y
+        CONFIG_PACKAGE_luci-app-opkg=y
+        CONFIG_PACKAGE_luci-base=y
+        CONFIG_PACKAGE_ethtool=y
+        CONFIG_PACKAGE_automount=y
+        CONFIG_PACKAGE_autocore=y
+        CONFIG_PACKAGE_autosamba=y
+        CONFIG_PACKAGE_my-default-settings=y
+        CONFIG_PACKAGE_kmod-usb-net-rndis=y
+        CONFIG_PACKAGE_kmod-usb-net=y
+        CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
+        CONFIG_PACKAGE_zram-swap=y
+        EOF
+
+        IFS=',' read -r -a plugins <<< "${{ github.event.inputs.CUSTOM_PLUGINS }}"
+        for plugin in "${plugins[@]}"; do
+          echo "CONFIG_PACKAGE_${plugin}=y" >> openwrt/.config
+        done
+        
+    - name: 下载编译依赖
+      id: package
+      run: |
+        cd openwrt
+        make defconfig
+        make download -j8
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
+    
+    - name: 编译源码
+      id: compile
+      run: |
+        cd openwrt
+        echo -e "$(nproc) thread compile"
+        make -j$(nproc) || make -j1 || make -j1 V=s
+        echo "status=success" >> $GITHUB_OUTPUT
+        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+
+
+    - name: 打包直刷包
+      run: |
+        sudo apt install img2simg
+        ver="v0.3.1"
+        curl -L -o ./AmlImg https://github.com/hzyitc/AmlImg/releases/download/$ver/AmlImg_${ver}_linux_amd64
+        chmod +x ./AmlImg
+        curl -L -o ./uboot.img https://github.com/shiyu1314/u-boot-onecloud/releases/download/build-20230901-0443/eMMC.burn.img
+        ./AmlImg unpack ./uboot.img burn/
+        gunzip openwrt/bin/targets/*/*/*.gz
+        diskimg=$(ls openwrt/bin/targets/*/*/*.img)
+        loop=$(sudo losetup --find --show --partscan $diskimg)
+        img_ext="openwrt.img"
+        rootfs_img=$1${img_ext}
+        sudo truncate -s ${{ github.event.inputs.OP_rootfs }}M ${rootfs_img}
+        sudo mkfs.ext4 -F ${rootfs_img}
+        sudo mkdir -p /mnt/img /mnt/rootfs
+        sudo mount ${rootfs_img} /mnt/img
+        sudo mount ${loop}p2 /mnt/rootfs
+        sudo cp -r /mnt/rootfs/* /mnt/img
+        sudo sync
+        sudo umount /mnt/img /mnt/rootfs
+        sudo img2simg ${loop}p1 burn/boot.simg
+        sudo img2simg openwrt.img burn/rootfs.simg
+        sudo rm -rf *.img
+        sudo losetup -d $loop
+        cat <<EOF >>burn/commands.txt
+        PARTITION:boot:sparse:boot.simg
+        PARTITION:rootfs:sparse:rootfs.simg
+        EOF
+        prefix=$(ls openwrt/bin/targets/*/*/*.img | sed 's/\.img$//')
+        burnimg=${prefix}_${{ matrix.kernel_version }}_burn.img
+        ./AmlImg pack $burnimg burn/
+        for f in openwrt/bin/targets/*/*/*_${{ matrix.kernel_version }}_burn.img; do
+          sha256sum "$f" >"${f}.sha"
+          xz -9 --threads=0 --compress "$f"
+        done
+        sudo rm -rf openwrt/bin/targets/*/*/*.img
+        sudo rm -rf openwrt/bin/targets/*/*/*.gz
+
+    - name: 查看磁盘使用情况
+      if: (!cancelled())
+      run: df -hT
+
+    - name: 整理文件
+      id: organize
+      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      run: |
+        cd openwrt/bin/targets/*/*
+        rm -rf packages
+        rm -rf *.buildinfo
+        rm -rf profiles.json
+        rm -rf *.manifest
+        rm -rf *.sha
+        rm -rf sha256sums
+        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+
+    - name: 上传固件到Releases
+      uses: softprops/action-gh-release@master
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{env.DATE}}_openwrt_burn
+        files: ${{ env.FIRMWARE }}/*
+        body: |
+          ====================固件信息=======================
+           源码：${{ github.event.inputs.REPO_URL }}
+           默认地址：${{ github.event.inputs.OP_IP }}
+           插件：${{ github.event.inputs.CUSTOM_PLUGINS }}
+           定制作者：${{ github.event.inputs.OP_author }}
+           默认密码：无
+
